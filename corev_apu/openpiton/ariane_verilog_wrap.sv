@@ -69,8 +69,14 @@ module ariane_verilog_wrap
   wt_cache_pkg::l15_req_t  l15_req;
   wt_cache_pkg::l15_rtrn_t l15_rtrn;
 
-  assign l15_req_o = l15_req;
   assign l15_rtrn  = l15_rtrn_i;
+
+`ifdef NO_PMESH_NOC_WAKEUP
+  assign l15_req_o = l15_req;
+`else
+  wt_cache_pkg::l15_req_t  l15_req_gated;
+  assign l15_req_o = l15_req_gated;
+`endif
 `else
   ariane_axi::req_t             axi_req;
   ariane_axi::resp_t            axi_resp;
@@ -79,28 +85,44 @@ module ariane_verilog_wrap
   assign axi_resp  = axi_resp_i;
 `endif
 
-
+`ifndef NO_PMESH_NOC_WAKEUP
   /////////////////////////////
   // Core wakeup mechanism
   /////////////////////////////
+  // Ariane in future could support an idle mode
+  // For now, we just gate the transducer_l15_val signal
+  // until the wakeup interrupt is received.
+  // Off-chip logic will send one of these to core 0
+  // and that core can then use stores to INT_VEC_DIS
+  // to send wakeup interrupts to the other cores
 
-  // // this is a workaround since interrupts are not fully supported yet.
   // // the logic below catches the initial wake up interrupt that enables the cores.
-  // logic wake_up_d, wake_up_q;
-  // logic rst_n;
+  logic wake_up_d, wake_up_q;
+  logic rst_n;
+  logic wakeup_override_q;
 
-  // assign wake_up_d = wake_up_q || ((l15_rtrn.l15_returntype == wt_cache_pkg::L15_INT_RET) && l15_rtrn.l15_val);
+  // See OpenPiton micro_arch.pdf and OST1 microarchitecture spec for format
+  // [17:16] == 01 and [5:0] == 000001 means power on reset
+  assign wake_up_d = wake_up_q || ((l15_rtrn.l15_returntype == wt_cache_pkg::L15_INT_RET) && l15_rtrn.l15_val && (l15_rtrn.l15_data_0[17:16] == 2'b01) && (l15_rtrn.l15_data_0[5:0] == 6'b000001));
 
-  // always_ff @(posedge clk_i or negedge reset_l) begin : p_regs
-  //   if(~reset_l) begin
-  //     wake_up_q <= 0;
-  //   end else begin
-  //     wake_up_q <= wake_up_d;
-  //   end
-  // end
+  always_ff @(posedge clk_i) begin : p_regs
+    if(~reset_l) begin
+      wake_up_q <= 0;
+    end else begin
+      wake_up_q <= wake_up_d;
+    end
+  end
 
   // // reset gate this
   // assign rst_n = wake_up_q & reset_l;
+  assign rst_n = reset_l;
+
+  always_comb begin
+    l15_req_gated = l15_req;
+    l15_req_gated.l15_val = l15_req.l15_val && (wake_up_q || wakeup_override_q);
+  end
+
+`else // ifndef NO_PMESH_NOC_WAKEUP
 
   // this is a workaround,
   // we basically wait for 32k cycles such that the SRAMs in openpiton can initialize
@@ -113,7 +135,7 @@ module ariane_verilog_wrap
 
   assign wake_up_cnt_d = (wake_up_cnt_q[$high(wake_up_cnt_q)]) ? wake_up_cnt_q : wake_up_cnt_q + 1;
 
-  always_ff @(posedge clk_i or negedge reset_l) begin : p_regs
+  always_ff @(posedge clk_i) begin : p_regs
     if(~reset_l) begin
       wake_up_cnt_q <= 0;
     end else begin
@@ -124,6 +146,8 @@ module ariane_verilog_wrap
   // reset gate this
   assign rst_n = wake_up_cnt_q[$high(wake_up_cnt_q)] & reset_l;
 
+`endif // ifndef NO_PMESH_NOC_WAKEUP
+
 
   /////////////////////////////
   // synchronizers
@@ -133,38 +157,44 @@ module ariane_verilog_wrap
   logic ipi, time_irq, debug_req;
 
   // reset synchronization
-  synchronizer i_sync (
-    .clk         ( clk_i      ),
-    .presyncdata ( rst_n      ),
-    .syncdata    ( spc_grst_l )
-  );
+  /*
+   * Warning: `initial` assignments are strongly discouraged in ASIC-oriented RTL
+   * designs. The following initialization is used solely to handle SV assertions
+   * embedded inside the Ariane core.
+  */
+  logic spc_grst_l = 1'b0;
+  logic rst_n_f;
+
+  always_ff @(posedge clk_i)
+      rst_n_f <= rst_n;
+
+  always_ff @(posedge clk_i)
+    /*
+     * Warning: force conversion from 'x' to '0' is strongly discouraged in
+      * ASIC-oriented RTL designs. The following initilization is used solely to
+      * handle SV assertions embedded inside the Ariane core.
+    */
+    // synopsys translate_off
+    if (rst_n_f === 1'bx)
+      spc_grst_l <= 1'b0;
+    else
+    // synopsys translate_on
+      spc_grst_l <= rst_n_f;
 
   // interrupts
-  for (genvar k=0; k<$size(irq_i); k++) begin
-    synchronizer i_irq_sync (
-      .clk         ( clk_i      ),
-      .presyncdata ( irq_i[k]   ),
-      .syncdata    ( irq[k]     )
-    );
+  always_ff @(posedge clk_i) begin
+      if (~spc_grst_l) begin
+          irq <= 'b0;
+          ipi <= 'b0;
+          time_irq <= 'b0;
+          debug_req <= 'b0;
+      end else begin
+          irq <= irq_i;
+          ipi <= ipi_i;
+          time_irq <= time_irq_i;
+          debug_req <= debug_req_i;
+      end
   end
-
-  synchronizer i_ipi_sync (
-    .clk         ( clk_i      ),
-    .presyncdata ( ipi_i      ),
-    .syncdata    ( ipi        )
-  );
-
-  synchronizer i_timer_sync (
-    .clk         ( clk_i      ),
-    .presyncdata ( time_irq_i ),
-    .syncdata    ( time_irq   )
-  );
-
-  synchronizer i_debug_sync (
-    .clk         ( clk_i       ),
-    .presyncdata ( debug_req_i ),
-    .syncdata    ( debug_req   )
-  );
 
   /////////////////////////////
   // ariane instance
