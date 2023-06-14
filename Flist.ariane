@@ -33,7 +33,7 @@ core/include/cvxif_pkg.sv
 common/submodules/common_cells/src/cf_math_pkg.sv
 core/include/instr_tracer_pkg.sv
 core/cvxif_example/include/cvxif_instr_pkg.sv
-corev_apu/rv_plic/rtl/rv_plic_reg_pkg.sv
+// corev_apu/rv_plic/rtl/rv_plic_reg_pkg.sv
 common/local/util/sram.sv
 common/submodules/common_cells/src/deprecated/rrarbiter.sv
 common/submodules/common_cells/src/deprecated/fifo_v1.sv
@@ -115,10 +115,10 @@ corev_apu/riscv-dbg/src/dm_sba.sv
 corev_apu/riscv-dbg/src/dmi_jtag_tap.sv
 corev_apu/openpiton/riscv_peripherals.sv
 corev_apu/openpiton/ariane_verilog_wrap.sv
-corev_apu/rv_plic/rtl/rv_plic_target.sv
-corev_apu/rv_plic/rtl/rv_plic_gateway.sv
-corev_apu/rv_plic/rtl/plic_regmap.sv
-corev_apu/rv_plic/rtl/plic_top.sv
+// corev_apu/rv_plic/rtl/rv_plic_target.sv
+// corev_apu/rv_plic/rtl/rv_plic_gateway.sv
+// corev_apu/rv_plic/rtl/plic_regmap.sv
+// corev_apu/rv_plic/rtl/plic_top.sv
 corev_apu/fpga/src/axi2apb/src/axi2apb_wrap.sv
 corev_apu/fpga/src/axi2apb/src/axi2apb.sv
 corev_apu/fpga/src/axi2apb/src/axi2apb_64_32.sv
